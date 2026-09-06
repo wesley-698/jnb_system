@@ -1,0 +1,36 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: coin-reservation-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        # Kafka 故障时 send() 快速失败（默认 60s 会阻塞请求线程），便于触发补偿降级
+        max.block.ms: 1000
+        # 投递结果确认超时（配合异步回调，失败即补偿）
+        delivery.timeout.ms: 3000
+        request.timeout.ms: 2000
+
+# 库存分片数量（热点治理：把单网点库存拆成 N 份）
+coin:
+  stock-shards: 10
+  queue-shards: 10
+
+logging:
+  level:
+    com.psbc.coin.reservation: DEBUG

@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+    gateway:
+      routes:
+        - id: reservation-service
+          uri: lb://coin-reservation-service
+          predicates:
+            - Path=/api/reservation/**
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/order/**
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/user/**
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/api/product/**
+        - id: exchange-service
+          uri: lb://exchange-service
+          predicates:
+            - Path=/api/exchange/**
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
