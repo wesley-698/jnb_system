@@ -1,0 +1,65 @@
+步骤 1：实名预填（必须最先做）
+bash
+复制
+curl -X POST http://localhost:8083/api/user/qualify \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":1001,"idCard":"110101199001011234","name":"张三","phone":"13800000001"}'
+→ 期望 code:0（同时写入 Redis qual:ok:1001，有效期 1 小时）
+
+步骤 2：查看产品和网点额度（可选，验证数据）
+bash
+复制
+curl http://localhost:8084/api/product/list
+curl http://localhost:8084/api/product/1/branches
+步骤 3：库存预热（必须做，否则抽签必失败）
+bash
+复制
+curl -X POST http://localhost:8084/api/product/1/init-stock
+→ 把 PG 里网点额度拆成 10 个分片写入 Redis
+
+步骤 4：提交预约（选网点 1）
+bash
+复制
+curl -X POST http://localhost:8081/api/reservation/submit \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":1,"branchId":1,"userId":1001,"idCard":"110101199001011234","token":"token-1001"}'
+→ 期望 code:0
+
+步骤 5：重复提交（验证幂等）
+bash
+复制
+curl -X POST http://localhost:8081/api/reservation/submit \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":1,"branchId":1,"userId":1001,"idCard":"110101199001011234","token":"token-1001"}'
+→ 期望 code:1003（请勿重复提交）
+
+步骤 6：触发抽签/分配
+bash
+复制
+curl -X POST "http://localhost:8081/api/reservation/draw/1?drawMode=1"
+→ 期望 code:0；内部执行 Lua 扣库存 → 发 Kafka
+
+步骤 7：等 3~5 秒（Kafka 异步落库）
+步骤 8：查询预约明细
+bash
+复制
+curl "http://localhost:8082/api/order/list?idCard=110101199001011234"
+→ 期望返回预约记录，记下 orderNo（下一步要用）
+
+步骤 9：兑换登记（用上一步的 orderNo）
+bash
+复制
+curl -X POST http://localhost:8085/api/exchange/register \
+  -H 'Content-Type: application/json' \
+  -d '{"orderNo":"把步骤8的orderNo粘这里","idCard":"110101199001011234","branchId":1,"operatorId":9001}'
+→ 期望 code:0
+
+步骤 10：重复兑换（验证状态机）
+同步骤 9 再发一次 → 期望 code:1010（该预约已兑换）
+
+四、现成脚本
+scripts/e2e-test.sh 已把上述流程串好（走网关 8080），你在 IDEA 起好服务后可直接跑：
+
+bash
+复制
+bash scripts/e2e-test.sh

@@ -49,3 +49,6 @@ if [ -n "$ORDER_NO" ]; then
 fi
 
 echo "========== 完成 =========="
+
+
+docker exec -it coin-redis redis-cli
