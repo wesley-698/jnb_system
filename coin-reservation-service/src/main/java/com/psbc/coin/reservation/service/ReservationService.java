@@ -6,9 +6,11 @@ import com.psbc.coin.common.result.Result;
 import com.psbc.coin.common.result.ResultCode;
 import com.psbc.coin.common.util.JsonUtils;
 import com.psbc.coin.common.util.SnowflakeIdGenerator;
+import com.psbc.coin.reservation.config.DegradeManager;
 import com.psbc.coin.reservation.dto.ReservationSubmitRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -32,6 +34,8 @@ public class ReservationService {
     private final DefaultRedisScript<Long> compensateStockScript;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final SnowflakeIdGenerator idGenerator;
+    private final DegradeManager degradeManager;
+    private final DbDirectReservationService dbDirectReservationService;
 
     @Value("${coin.stock-shards:10}")
     private int stockShards;
@@ -43,18 +47,40 @@ public class ReservationService {
                               DefaultRedisScript<Long> deductStockScript,
                               DefaultRedisScript<Long> compensateStockScript,
                               KafkaTemplate<String, String> kafkaTemplate,
-                              SnowflakeIdGenerator idGenerator) {
+                              SnowflakeIdGenerator idGenerator,
+                              DegradeManager degradeManager,
+                              DbDirectReservationService dbDirectReservationService) {
         this.redis = redis;
         this.deductStockScript = deductStockScript;
         this.compensateStockScript = compensateStockScript;
         this.kafkaTemplate = kafkaTemplate;
         this.idGenerator = idGenerator;
+        this.degradeManager = degradeManager;
+        this.dbDirectReservationService = dbDirectReservationService;
     }
 
     /**
      * 阶段2：资格校验 + 入队（幂等、不扣库存、不写 DB）。
      */
     public Result<Void> submit(ReservationSubmitRequest req) {
+        // ③ 降级模式：Redis 不可用（或手动开关打开）→ 走 DB 直扣
+        if (degradeManager.isDbDirectMode()) {
+            return dbDirectReservationService.submitDirect(req);
+        }
+        try {
+            return doRedisSubmit(req);
+        } catch (Exception e) {
+            if (isRedisUnavailable(e)) {
+                log.error("【降级】Redis 异常，转 DB 直扣: {}", e.getMessage());
+                degradeManager.markRedisDown();
+                return dbDirectReservationService.submitDirect(req);
+            }
+            throw e;
+        }
+    }
+
+    /** 正常链路：纯 Redis 操作（幂等 + 资格校验 + 入队），峰值不碰数据库 */
+    private Result<Void> doRedisSubmit(ReservationSubmitRequest req) {
         // 1. 幂等去重
         String idemKey = CommonConstants.KEY_IDEMPOTENT + ":" + req.getToken();
         Boolean set = redis.opsForValue().setIfAbsent(idemKey, "1", Duration.ofMinutes(10));
@@ -71,6 +97,18 @@ public class ReservationService {
         // 3. 入队/入池（TODO: drawMode 应从产品配置读取，此处默认排队模式）
         enqueue(req, CommonConstants.DRAW_MODE_QUEUE);
         return Result.success();
+    }
+
+    /** 判断异常是否为 Redis 不可用（连接失败 / 超时等数据访问异常） */
+    private boolean isRedisUnavailable(Throwable t) {
+        Throwable cur = t;
+        while (cur != null) {
+            if (cur instanceof DataAccessException || cur.getClass().getName().contains("Redis")) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     /**
@@ -173,12 +211,13 @@ public class ReservationService {
         ReservationResultMessage msg = new ReservationResultMessage(
                 UUID.randomUUID().toString(), orderNo, productId, branchId, userId, idCard, null,
                 shard, System.currentTimeMillis());
+        String json = JsonUtils.toJson(msg);
         try {
-            kafkaTemplate.send(CommonConstants.TOPIC_RESV_RESULT, orderNo, JsonUtils.toJson(msg))
+            kafkaTemplate.send(CommonConstants.TOPIC_RESV_RESULT, orderNo, json)
                     .whenComplete((result, ex) -> {
                         if (ex == null) {
-                            // 投递成功：记录待确认单（供对账扫描）
-                            redis.opsForZSet().add(CommonConstants.KEY_PENDING + ":" + productId, orderNo,
+                            // 投递成功：记录待确认单（存完整消息 JSON，供对账时精确补偿）
+                            redis.opsForZSet().add(CommonConstants.KEY_PENDING + ":" + productId, json,
                                     System.currentTimeMillis());
                         } else {
                             // future 异步失败：补偿回滚库存

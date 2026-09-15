@@ -77,8 +77,34 @@ mvn clean install -DskipTests
 2. 幂等 Token 防重
 3. DB 唯一约束 `(product_id, id_card)` + 乐观锁 `remain>0`
 
+## Redis 故障降级与恢复（已实现）
+
+Redis 不可用时自动降级为「DB 直扣」，保可用且不超卖：
+
+| 步骤 | 实现 |
+|------|------|
+| ① 检测 | Redis 超时 500ms + 异常识别 → `DegradeManager.markRedisDown()` |
+| ② 切换 | 手动开关（Nacos 动态）/ 自动切换；Sentinel 对直扣做强限流（默认 200 QPS） |
+| ③ 运行 | `DbDirectReservationService`：单库事务，乐观锁 `remain>0` + 唯一约束 |
+| ④ 恢复 | `RedisHealthProbe` 每 5s 探活 → `StockRebuildService` 按 PG 重建 Redis 库存 → 切回主模式 |
+
+**对账**：`ReservationReconcileTask` 定时扫描待确认单，超时未落库则「先查 PG 再补偿回补」。
+
+**运维接口**：
+```bash
+GET  /api/reservation/degrade/status      # 查看降级状态
+POST /api/reservation/rebuild/{productId} # 手动重建 Redis 库存
+```
+
+**手动降级开关**（Nacos：`coin-reservation-service.yml`）：
+```yaml
+coin:
+  degrade:
+    db-direct-enabled: true    # 强制走 DB 直扣（动态刷新生效）
+    db-direct-qps-limit: 200   # 降级直扣限流阈值
+```
+
 ## 说明
 
-- 本工程为**可编译可运行的骨架 + 核心业务代码**；三要素校验、真实 JWT、Sentinel 规则持久化、
-  定时对账等生产细节以 TODO 标注。
+- 本工程为**可编译可运行的骨架 + 核心业务代码**；三要素校验、真实 JWT、Sentinel 规则持久化以 TODO 标注。
 - 生产拓扑：Redis Cluster、Kafka 多 broker、PostgreSQL 1主2从（Patroni/Repmgr）见设计文档。

@@ -4,14 +4,36 @@ server:
 spring:
   application:
     name: coin-reservation-service
+  # Nacos 配置中心：降级开关等可动态刷新（optional: 配置不存在时不报错）
+  config:
+    import:
+      - optional:nacos:${spring.application.name}.yml
   cloud:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        file-extension: yml
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # ① Redis 超时：防止"Redis 慢"挂死请求线程（默认 Lettuce 命令超时过长）
+      timeout: 500ms
+      connect-timeout: 500ms
+      lettuce:
+        shutdown-timeout: 200ms
+  # 降级模式（DB 直扣）需要直连数据库
+  datasource:
+    url: jdbc:postgresql://${PG_HOST:localhost}:5432/${PG_DB:coin_reservation}
+    username: ${PG_USER:coin}
+    password: ${PG_PASSWORD:coin123}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # 降级模式下并发直打 DB，连接池不宜过大，避免压垮主库
+      maximum-pool-size: 20
+      connection-timeout: 1000
   kafka:
     bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
     producer:
@@ -30,6 +52,16 @@ spring:
 coin:
   stock-shards: 10
   queue-shards: 10
+  degrade:
+    # ③ Nacos 动态降级开关：改为 true 即强制走 DB 直扣（也可由 Redis 故障自动触发）
+    db-direct-enabled: false
+    # 降级模式下 DB 直扣的限流阈值（QPS，强限流保护主库）
+    db-direct-qps-limit: 200
+  reconcile:
+    # ④ 对账：待确认单超过该秒数仍未落库 → 触发补偿回补
+    pending-timeout-seconds: 120
+    # 对账任务执行间隔（毫秒）
+    interval-ms: 60000
 
 logging:
   level:

@@ -22,6 +22,9 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # Redis 超时：防止缓存故障拖垮服务
+      timeout: 500ms
+      connect-timeout: 500ms
   kafka:
     bootstrap-servers: ${KAFKA_ADDR:localhost:9092}
     consumer:
