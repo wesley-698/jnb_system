@@ -12,7 +12,7 @@
 
     <artifactId>coin-reservation-service</artifactId>
     <name>coin-reservation-service</name>
-    <description>预约核心：资格校验/抽签排队/Lua防超卖/Kafka投递/补偿</description>
+    <description>预约核心：时间窗校验/资格校验/Lua原子扣网点额度/Kafka投递/在途单对账</description>
 
     <dependencies>
         <dependency>

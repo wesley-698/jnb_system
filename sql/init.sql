@@ -22,17 +22,15 @@ CREATE TABLE IF NOT EXISTS t_qualification (
   CONSTRAINT uk_qualification_idcard UNIQUE (id_card)
 );
 
--- 产品表
+-- 产品表（普通纪念币：预约期内先到先得、约满为止，无抽签环节）
 CREATE TABLE IF NOT EXISTS t_product (
   id              BIGSERIAL PRIMARY KEY,
   product_code    VARCHAR(64)  NOT NULL,
   name            VARCHAR(128) NOT NULL,
   total_stock     BIGINT       NOT NULL,
   limit_per_user  INT          NOT NULL DEFAULT 1,
-  draw_mode       SMALLINT     NOT NULL DEFAULT 1,
-  submit_start    TIMESTAMP    NOT NULL,
-  submit_end      TIMESTAMP    NOT NULL,
-  draw_time       TIMESTAMP    NOT NULL,
+  submit_start    TIMESTAMP    NOT NULL,  -- 开闸(预约开始)
+  submit_end      TIMESTAMP    NOT NULL,  -- 截止(预约结束)
   status          SMALLINT     NOT NULL DEFAULT 0,
   CONSTRAINT uk_product_code UNIQUE (product_code)
 );
@@ -89,11 +87,11 @@ INSERT INTO t_branch (branch_code, branch_name, address) VALUES
   ('PSBC-SH-001', '上海浦东支行', '上海市浦东新区示例路3号')
 ON CONFLICT (branch_code) DO NOTHING;
 
--- 示例产品（2025年贺岁纪念币）
-INSERT INTO t_product (product_code, name, total_stock, limit_per_user, draw_mode,
-                       submit_start, submit_end, draw_time, status) VALUES
-  ('COIN-2025-01', '2025年贺岁纪念币', 900, 1, 1,
-   now() - interval '1 day', now() + interval '7 day', now() + interval '7 day', 1)
+-- 示例产品（2025年贺岁纪念币，预约期 7 天，先到先得）
+INSERT INTO t_product (product_code, name, total_stock, limit_per_user,
+                       submit_start, submit_end, status) VALUES
+  ('COIN-2025-01', '2025年贺岁纪念币', 900, 1,
+   now() - interval '1 day', now() + interval '7 day', 1)
 ON CONFLICT (product_code) DO NOTHING;
 
 -- 示例网点额度（商品 × 网点，每网点 300）

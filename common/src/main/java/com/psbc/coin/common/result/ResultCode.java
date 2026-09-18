@@ -27,7 +27,8 @@ public enum ResultCode {
     BRANCH_NOT_FOUND(1007, "网点不存在"),
     ACTIVITY_NOT_STARTED(1008, "活动尚未开始"),
     ACTIVITY_ENDED(1009, "活动已结束"),
-    ALREADY_EXCHANGED(1010, "该预约已兑换，不可重复兑换");
+    ALREADY_EXCHANGED(1010, "该预约已兑换，不可重复兑换"),
+    PRODUCT_NOT_FOUND(1011, "产品不存在");
 
     private final int code;
     private final String message;

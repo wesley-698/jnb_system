@@ -5,7 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Kafka 中签结果消息（预约服务 → 订单服务）。
+ * Kafka 预约结果消息（预约服务 → 订单服务）：额度已在 Redis 扣减，此处用于异步落库。
  */
 @Data
 @NoArgsConstructor

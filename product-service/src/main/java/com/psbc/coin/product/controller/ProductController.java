@@ -50,12 +50,16 @@ public class ProductController {
     }
 
     /**
-     * 库存预热：把网点额度拆成 N 个分片写入 Redis。
-     * 每个分片分配 total/N，余数放入最后一个分片。
+     * 额度预热：把网点额度拆成 N 个分片写入 Redis，并登记该产品的可预约网点清单。
+     *
+     * <p>网点清单（{@code resv:branches:{productId}}）供预约服务在「先到先得」提交前
+     * 展示各网点余量，避免峰值期间回查数据库。
      */
     @PostMapping("/{productId}/init-stock")
     public Result<Void> initStock(@PathVariable Long productId) {
         List<BranchStock> stocks = branchStockRepository.findByProductId(productId);
+        String branchesKey = CommonConstants.KEY_BRANCHES + ":" + productId;
+        redis.delete(branchesKey);
         for (BranchStock s : stocks) {
             long perShard = s.getRemain() / stockShards;
             long remainder = s.getRemain() % stockShards;
@@ -64,6 +68,7 @@ public class ProductController {
                 String key = CommonConstants.KEY_STOCK + ":" + productId + ":" + s.getBranchId() + ":" + i;
                 redis.opsForValue().set(key, String.valueOf(shardStock));
             }
+            redis.opsForSet().add(branchesKey, String.valueOf(s.getBranchId()));
         }
         return Result.success();
     }

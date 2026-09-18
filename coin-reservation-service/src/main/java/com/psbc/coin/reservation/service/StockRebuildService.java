@@ -46,12 +46,16 @@ public class StockRebuildService {
     public void rebuild(Long productId) {
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT branch_id, remain FROM t_branch_stock WHERE product_id = ?", productId);
+        // 同步刷新可预约网点清单，保证余量查询接口在重建后依然可用
+        String branchesKey = CommonConstants.KEY_BRANCHES + ":" + productId;
+        redis.delete(branchesKey);
         for (Map<String, Object> row : rows) {
             long branchId = ((Number) row.get("branch_id")).longValue();
             long remain = ((Number) row.get("remain")).longValue();
             writeShards(productId, branchId, remain);
+            redis.opsForSet().add(branchesKey, String.valueOf(branchId));
         }
-        log.info("【重建】Redis 库存已按 PG 重建: productId={}, 网点数={}", productId, rows.size());
+        log.info("【重建】Redis 额度已按 PG 重建: productId={}, 网点数={}", productId, rows.size());
     }
 
     private void writeShards(Long productId, long branchId, long remain) {

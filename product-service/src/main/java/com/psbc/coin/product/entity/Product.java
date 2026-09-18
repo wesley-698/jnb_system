@@ -29,17 +29,11 @@ public class Product {
     @Column(name = "limit_per_user")
     private Integer limitPerUser;
 
-    @Column(name = "draw_mode")
-    private Integer drawMode;
-
     @Column(name = "submit_start")
     private LocalDateTime submitStart;
 
     @Column(name = "submit_end")
     private LocalDateTime submitEnd;
-
-    @Column(name = "draw_time")
-    private LocalDateTime drawTime;
 
     @Column(name = "status")
     private Integer status;
